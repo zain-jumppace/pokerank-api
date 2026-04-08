@@ -1,0 +1,1824 @@
+{
+  "info": {
+    "name": "Pokerank API",
+    "description": "Pokémon GO companion analytics backend — complete API collection.\n\n## Auth Flows\n\n### Registration (3 steps):\n1. POST /auth/register → sends OTP to email\n2. POST /auth/verify-otp → verifies OTP, returns tokens + full user profile\n3. POST /auth/create-profile → completes profile (multipart: fields + optional image)\n\n### Profile Management:\n- PATCH /users/me → update fields + optional new image (multipart or JSON)\n- DELETE /users/me/profile-image → remove image (auto-cleans storage)\n\n### Forgot Password (2 steps):\n1. POST /auth/forgot-password → sends OTP\n2. POST /auth/reset-password → verify OTP + set new password\n\n### Login:\nPOST /auth/login → returns tokens + full user profile (same shape as GET /users/me)\n\n### Token Refresh:\nPOST /auth/refresh → returns new tokens + full user profile\n\n## Data Seeding\nRun `npm run seed` to populate 386 Pokémon (Gen 1-3), rankings, raid bosses, and events from PokeAPI.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "{{host}}/api/v1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth — Registration Flow",
+      "description": "3-step registration: Register → Verify OTP → Create Profile",
+      "item": [
+        {
+          "name": "Step 1 — Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200 or 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Response contains email and message', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    pm.expect(data).to.have.property('message');",
+                  "    pm.expect(data).to.have.property('email');",
+                  "    pm.environment.set('registeredEmail', data.email);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"testuser@pokerank.app\",\n  \"password\": \"Test@12345\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "Register with email + password. Sends 6-digit OTP to email. Does NOT return tokens yet."
+          }
+        },
+        {
+          "name": "Step 2 — Verify OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    if (data.accessToken) {",
+                  "        pm.environment.set('accessToken', data.accessToken);",
+                  "        pm.environment.set('refreshToken', data.refreshToken);",
+                  "        console.log('Tokens saved — isProfileComplete: ' + (data.user && data.user.isProfileComplete));",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Status code is 200 or 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Response has tokens and user profile', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    pm.expect(data).to.have.property('accessToken');",
+                  "    pm.expect(data).to.have.property('refreshToken');",
+                  "    pm.expect(data).to.have.property('user');",
+                  "    pm.expect(data.user).to.have.property('email');",
+                  "    pm.expect(data.user.isEmailVerified).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"testuser@pokerank.app\",\n  \"code\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/verify-otp",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "verify-otp"]
+            },
+            "description": "Verify the 6-digit OTP from email. Returns accessToken + refreshToken. Replace '123456' with actual OTP from your email."
+          }
+        },
+        {
+          "name": "Resend OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200 or 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"testuser@pokerank.app\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/resend-otp",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "resend-otp"]
+            },
+            "description": "Resend OTP for email verification. Has a 60-second cooldown between requests."
+          }
+        },
+        {
+          "name": "Step 3 — Create Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200 or 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Profile is complete', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    pm.expect(data.isProfileComplete).to.eql(true);",
+                  "    pm.expect(data).to.have.property('firstName');",
+                  "    pm.expect(data).to.have.property('lastName');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "firstName",
+                  "value": "Hamza",
+                  "type": "text"
+                },
+                {
+                  "key": "lastName",
+                  "value": "Khan",
+                  "type": "text"
+                },
+                {
+                  "key": "phoneNumber",
+                  "value": "+923001234567",
+                  "type": "text"
+                },
+                {
+                  "key": "dateOfBirth",
+                  "value": "1998-05-15",
+                  "type": "text"
+                },
+                {
+                  "key": "profileImage",
+                  "type": "file",
+                  "src": "",
+                  "description": "Optional profile image (jpg, png, gif, webp, etc). Max 5MB."
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/create-profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "create-profile"]
+            },
+            "description": "Complete user profile after OTP verification. Requires Bearer token from Step 2. Send as multipart/form-data. firstName and lastName required. profileImage is an optional image file — server handles upload + attach atomically."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth — Login",
+      "description": "Email/password login",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    if (data.accessToken) {",
+                  "        pm.environment.set('accessToken', data.accessToken);",
+                  "        pm.environment.set('refreshToken', data.refreshToken);",
+                  "        console.log('Login — user: ' + (data.user && data.user.email));",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Status code is 200 or 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Response has tokens and full user profile', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    pm.expect(data).to.have.property('accessToken');",
+                  "    pm.expect(data).to.have.property('refreshToken');",
+                  "    pm.expect(data).to.have.property('user');",
+                  "    pm.expect(data.user).to.have.property('id');",
+                  "    pm.expect(data.user).to.have.property('email');",
+                  "    pm.expect(data.user).to.have.property('role');",
+                  "    pm.expect(data.user).to.have.property('isEmailVerified');",
+                  "    pm.expect(data.user).to.have.property('isProfileComplete');",
+                  "    pm.expect(data.user).to.have.property('subscriptionTier');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"testuser@pokerank.app\",\n  \"password\": \"Test@12345\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Login with email + password. Returns tokens + full user profile (same shape as GET /users/me). If email not verified, returns 401 and auto-sends OTP."
+          }
+        },
+        {
+          "name": "Login as Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    if (data.accessToken) {",
+                  "        pm.environment.set('accessToken', data.accessToken);",
+                  "        pm.environment.set('refreshToken', data.refreshToken);",
+                  "        pm.environment.set('adminAccessToken', data.accessToken);",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Response has user object with admin role', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    pm.expect(data).to.have.property('user');",
+                  "    pm.expect(data.user.role).to.eql('admin');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Login with admin credentials from environment variables."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth — Social Login (Firebase)",
+      "description": "Social authentication via Firebase. Frontend authenticates with Firebase (Google/Apple/GitHub), sends idToken to backend. Handles both new signup and existing user login in one endpoint.",
+      "item": [
+        {
+          "name": "Social Login (Google)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    if (data.accessToken) {",
+                  "        pm.environment.set('accessToken', data.accessToken);",
+                  "        pm.environment.set('refreshToken', data.refreshToken);",
+                  "        console.log('Social auth — isNewUser: ' + data.isNewUser + ', email: ' + (data.user && data.user.email));",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Status code is 200 or 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Response has tokens, user, and isNewUser flag', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    pm.expect(data).to.have.property('accessToken');",
+                  "    pm.expect(data).to.have.property('refreshToken');",
+                  "    pm.expect(data).to.have.property('user');",
+                  "    pm.expect(data).to.have.property('isNewUser');",
+                  "    pm.expect(data.user).to.have.property('email');",
+                  "    pm.expect(data.user.isEmailVerified).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"{{firebaseIdToken}}\",\n  \"provider\": \"google\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/social",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "social"]
+            },
+            "description": "Social login/register via Firebase. Supports google, apple, github providers.\n\n- If user exists with that email → logs in, returns tokens\n- If new email → auto-registers, returns tokens + isNewUser: true\n- If email/password user exists → links social provider to existing account\n\nReplace {{firebaseIdToken}} with the actual Firebase ID token from client-side auth."
+          }
+        },
+        {
+          "name": "Social Login (Apple)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"{{firebaseIdToken}}\",\n  \"provider\": \"apple\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/social",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "social"]
+            },
+            "description": "Social login via Apple Sign-In through Firebase."
+          }
+        },
+        {
+          "name": "Social Login (GitHub)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"{{firebaseIdToken}}\",\n  \"provider\": \"github\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/social",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "social"]
+            },
+            "description": "Social login via GitHub through Firebase."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth — Forgot Password",
+      "description": "2-step password reset: Forgot → Reset",
+      "item": [
+        {
+          "name": "Step 1 — Forgot Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200 or 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Response has message', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    pm.expect(data).to.have.property('message');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"testuser@pokerank.app\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/forgot-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "forgot-password"]
+            },
+            "description": "Send OTP to email for password reset. Always returns success (does not leak whether email exists)."
+          }
+        },
+        {
+          "name": "Step 2 — Reset Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200 or 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Password reset success', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    pm.expect(data.message).to.include('reset');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"testuser@pokerank.app\",\n  \"code\": \"123456\",\n  \"newPassword\": \"NewPass@123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/reset-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "reset-password"]
+            },
+            "description": "Verify OTP and set new password. Replace '123456' with actual OTP. Invalidates all existing refresh tokens."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth — Token & Session",
+      "description": "Refresh, logout, profile management",
+      "item": [
+        {
+          "name": "Refresh Tokens",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    if (data.accessToken) {",
+                  "        pm.environment.set('accessToken', data.accessToken);",
+                  "        pm.environment.set('refreshToken', data.refreshToken);",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Response has tokens and full user profile', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    pm.expect(data).to.have.property('accessToken');",
+                  "    pm.expect(data).to.have.property('refreshToken');",
+                  "    pm.expect(data).to.have.property('user');",
+                  "    pm.expect(data.user).to.have.property('email');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "refresh"]
+            },
+            "description": "Exchange refresh token for new access + refresh tokens + full user profile."
+          }
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200 or 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    pm.environment.unset('accessToken');",
+                  "    pm.environment.unset('refreshToken');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "logout"]
+            },
+            "description": "Revoke current session by sending the refreshToken. If the token doesn't match, all sessions are revoked as a safety fallback. Clears tokens from environment."
+          }
+        },
+        {
+          "name": "Get My Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has profile fields', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    pm.expect(data).to.have.property('email');",
+                  "    pm.expect(data).to.have.property('role');",
+                  "    pm.expect(data).to.have.property('isEmailVerified');",
+                  "    pm.expect(data).to.have.property('isProfileComplete');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "me"]
+            },
+            "description": "Get full profile of authenticated user."
+          }
+        },
+        {
+          "name": "Update My Profile (with image)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "firstName",
+                  "value": "Hamza",
+                  "type": "text"
+                },
+                {
+                  "key": "lastName",
+                  "value": "Updated",
+                  "type": "text"
+                },
+                {
+                  "key": "phoneNumber",
+                  "value": "+923009876543",
+                  "type": "text"
+                },
+                {
+                  "key": "profileImage",
+                  "type": "file",
+                  "src": "",
+                  "description": "New profile image — replaces old one. Server auto-deletes the previous image."
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "me"]
+            },
+            "description": "Update profile fields and/or replace profile image. Send as multipart/form-data if uploading a new image. Old image is automatically deleted from storage. Can also send as application/json if only updating text fields."
+          }
+        },
+        {
+          "name": "Update My Profile (JSON only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Hamza\",\n  \"lastName\": \"Updated\",\n  \"phoneNumber\": \"+923009876543\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "me"]
+            },
+            "description": "Update profile text fields only (no image change). Send as application/json."
+          }
+        },
+        {
+          "name": "Delete Profile Image",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "pm.test('Profile image is removed', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    pm.expect(data.profileImage).to.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/me/profile-image",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "me", "profile-image"]
+            },
+            "description": "Remove profile image entirely. Deletes the file from storage and clears the reference from the user profile."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Files",
+      "description": "Standalone file upload and management. Profile images are handled directly by the profile endpoints (create-profile, update-profile). Use this for general file uploads only.",
+      "item": [
+        {
+          "name": "Upload File (Profile Image)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    if (data.id) {",
+                  "        pm.environment.set('uploadedFileId', data.id);",
+                  "        console.log('File ID saved: ' + data.id);",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Status code is 200 or 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Response has file fields', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    pm.expect(data).to.have.property('id');",
+                  "    pm.expect(data).to.have.property('url');",
+                  "    pm.expect(data).to.have.property('fileType');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "Select an image file (jpg, png, gif, webp, svg, bmp, tiff). Max 5MB."
+                },
+                {
+                  "key": "category",
+                  "value": "profiles",
+                  "type": "text",
+                  "description": "File category: profiles or general"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/files/upload",
+              "host": ["{{baseUrl}}"],
+              "path": ["files", "upload"]
+            },
+            "description": "Upload an image file. Returns file metadata including the `id` to use in create-profile or update-profile. Supported: jpeg, png, gif, webp, svg, bmp, tiff. Max 5MB."
+          }
+        },
+        {
+          "name": "List My Files",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/files?category=profiles",
+              "host": ["{{baseUrl}}"],
+              "path": ["files"],
+              "query": [
+                { "key": "category", "value": "profiles", "disabled": false }
+              ]
+            },
+            "description": "List all uploaded files for authenticated user. Optional category filter."
+          }
+        },
+        {
+          "name": "Get File by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/files/{{uploadedFileId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["files", "{{uploadedFileId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete File",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/files/{{uploadedFileId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["files", "{{uploadedFileId}}"]
+            },
+            "description": "Soft-delete a file. File remains on disk but is marked inactive."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pokédex",
+      "description": "Public Pokémon data endpoints (no auth required). Detail returns full data: stats, Max CP, Stat Product, fast/charge moves with DPS/Energy, type effectiveness (weak/resistant/immune), full evolution chain with rankings per stage, league rankings with S/A/B/C/D rating, and best use cases (PvP/Raid star ratings).",
+      "item": [
+        {
+          "name": "List Pokémon",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pokedex?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["pokedex"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "type", "value": "Fire", "disabled": true },
+                { "key": "region", "value": "kanto", "disabled": true },
+                { "key": "generation", "value": "1", "disabled": true },
+                { "key": "league", "value": "great", "disabled": true }
+              ]
+            },
+            "description": "List Pokémon with optional filters (type, region, generation) and pagination."
+          }
+        },
+        {
+          "name": "Trending Pokémon",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "pm.test('Returns array of trending Pokémon', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    pm.expect(data).to.be.an('array');",
+                  "    if (data.length > 0) {",
+                  "        pm.expect(data[0]).to.have.property('overallRanking');",
+                  "        pm.expect(data[0]).to.have.property('league');",
+                  "        pm.expect(data[0]).to.have.property('spriteUrl');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pokedex/trending?limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["pokedex", "trending"],
+              "query": [
+                { "key": "limit", "value": "10" }
+              ]
+            },
+            "description": "Get top-ranked Pokémon across leagues — used for the Trending Pokémon section on the home screen. Returns name, types, sprite, overallRanking, and league."
+          }
+        },
+        {
+          "name": "Search Pokémon",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pokedex/search?q=Charizard",
+              "host": ["{{baseUrl}}"],
+              "path": ["pokedex", "search"],
+              "query": [{ "key": "q", "value": "Charizard" }]
+            },
+            "description": "Search Pokémon by name (case-insensitive, max 20 results)."
+          }
+        },
+        {
+          "name": "Get Pokémon Detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has all detail tabs data', function () {",
+                  "    const json = pm.response.json();",
+                  "    const d = json.data || json;",
+                  "    // Stats tab",
+                  "    pm.expect(d).to.have.property('totalStats');",
+                  "    pm.expect(d).to.have.property('maxCp');",
+                  "    pm.expect(d).to.have.property('statProduct');",
+                  "    // Info tab (moves)",
+                  "    pm.expect(d).to.have.property('fastMoves');",
+                  "    pm.expect(d).to.have.property('chargeMoves');",
+                  "    pm.expect(d).to.have.property('typeEffectiveness');",
+                  "    // Insights tab",
+                  "    pm.expect(d).to.have.property('evolutionChain');",
+                  "    pm.expect(d).to.have.property('rankings');",
+                  "    pm.expect(d).to.have.property('bestUseCases');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pokedex/6",
+              "host": ["{{baseUrl}}"],
+              "path": ["pokedex", "6"]
+            },
+            "description": "Full detail for one Pokémon.\n\n**Stats tab**: baseAtk, baseDef, baseSta, totalStats, maxCp (Lv 40), statProduct, generation, region.\n\n**Info tab**: fastMoves and chargeMoves (each with name, type, power, energy, dps, isElite), typeEffectiveness (weakTo, resistantTo, immuneTo).\n\n**Insights tab**: evolutionChain (ordered stages with name, sprite, generation, baseStatsTotal, stageLabel '1/3', rankings per league), rankings per league (rank, dps, S/A/B/C/D rating), bestUseCases (PvP and Raid star ratings 1-5)."
+          }
+        },
+        {
+          "name": "Get Pokémon Detail (Mewtwo)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pokedex/150",
+              "host": ["{{baseUrl}}"],
+              "path": ["pokedex", "150"]
+            },
+            "description": "Mewtwo — S-rank across all leagues, 5/5 PvP and Raid."
+          }
+        },
+        {
+          "name": "Get Pokémon Neighbors",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pokedex/6/neighbors",
+              "host": ["{{baseUrl}}"],
+              "path": ["pokedex", "6", "neighbors"]
+            },
+            "description": "Get prev/next Pokémon for swipe navigation."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Rankings",
+      "description": "PvP/PvE rankings — public. List returns spriteUrl, bestMoveset, bestSpread per entry. Detail returns overallRank, typeRank, Performance Stats (DPS, TDO, Best IV Spread), Ranking Trends (historical rank changes with deltas), Top Counters (names + sprites), and Moveset Effectiveness (top 3 combos with % scores).",
+      "item": [
+        {
+          "name": "Get Rankings (Great League PvP)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "pm.test('Rankings have enriched fields', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    if (data.length > 0) {",
+                  "        pm.expect(data[0]).to.have.property('spriteUrl');",
+                  "        pm.expect(data[0]).to.have.property('bestMoveset');",
+                  "        pm.expect(data[0]).to.have.property('bestSpread');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rankings?league=great&mode=pvp&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["rankings"],
+              "query": [
+                { "key": "league", "value": "great" },
+                { "key": "mode", "value": "pvp" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "sort", "value": "metaRelevance", "disabled": true },
+                { "key": "role", "value": "attacker", "disabled": true }
+              ]
+            },
+            "description": "Rankings list with spriteUrl, bestMoveset, bestSpread. Filter by league, mode, sort, role."
+          }
+        },
+        {
+          "name": "Get Rankings (Ultra League PvP)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rankings?league=ultra&mode=pvp&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["rankings"],
+              "query": [
+                { "key": "league", "value": "ultra" },
+                { "key": "mode", "value": "pvp" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Ultra League PvP rankings (2500 CP cap)."
+          }
+        },
+        {
+          "name": "Get Rankings (Master League — No Cap)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rankings?league=master&mode=pvp&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["rankings"],
+              "query": [
+                { "key": "league", "value": "master" },
+                { "key": "mode", "value": "pvp" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Master League PvP rankings (no CP cap)."
+          }
+        },
+        {
+          "name": "Get Ranking Detail (Charizard)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "pm.test('Detail has all sections', function () {",
+                  "    const json = pm.response.json();",
+                  "    const d = json.data || json;",
+                  "    pm.expect(d).to.have.property('overallRank');",
+                  "    pm.expect(d).to.have.property('typeRank');",
+                  "    pm.expect(d).to.have.property('damagePerSecond');",
+                  "    pm.expect(d).to.have.property('totalDamageOutput');",
+                  "    pm.expect(d).to.have.property('bestIvSpread');",
+                  "    pm.expect(d).to.have.property('rankingTrends');",
+                  "    pm.expect(d).to.have.property('topCounters');",
+                  "    pm.expect(d).to.have.property('movesetEffectiveness');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rankings/6?league=great&mode=pvp",
+              "host": ["{{baseUrl}}"],
+              "path": ["rankings", "6"],
+              "query": [
+                { "key": "league", "value": "great" },
+                { "key": "mode", "value": "pvp" }
+              ]
+            },
+            "description": "Full ranking detail for one Pokémon.\n\n- **overallRank**: position across all Pokémon in this league/mode\n- **typeRank**: position among same primary type (e.g. Dragon Type Rank #1)\n- **Performance Stats**: damagePerSecond, totalDamageOutput, bestIvSpread (15/15/15)\n- **Ranking Trends**: historical rank changes (Current, 3mo ago, 6mo ago, 9mo ago, 1yr ago) with +/- deltas\n- **Top Counters**: 3 best counters with names + sprites (calculated via type effectiveness)\n- **Moveset Effectiveness**: top 3 move combos with effectiveness % (e.g. Dragon Breath + Dragon Claw: 96%)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Raid & Counter",
+      "description": "Full Raid & Counter module matching the app UI.\n\n**List**: Each boss card shows star rating, types, weaknesses, DPS, TDO, IV spread, league, evolutions/forms.\n\n**Detail**: Boss Moves (Quick + Charged with * for legacy), 100% IV Catch CP (regular + weather boosted), Current Rankings (Overall + Type Rank), League, Potential Forms (Mega/Primal/Shadow), All Weaknesses, 5 Ideal Counters (with Quick/Charged moves, DPS, Survive%, Effectiveness%), Suggested Team (top 3).\n\n**Team Builder**: Save custom counter teams (1-6 Pokémon) via queue endpoints.",
+      "item": [
+        {
+          "name": "List Active Raid Bosses",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "pm.test('Bosses have all card fields', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    if (data.length > 0) {",
+                  "        const b = data[0];",
+                  "        pm.expect(b).to.have.property('starRating');",
+                  "        pm.expect(b).to.have.property('weaknesses');",
+                  "        pm.expect(b).to.have.property('dps');",
+                  "        pm.expect(b).to.have.property('tdo');",
+                  "        pm.expect(b).to.have.property('ivSpread');",
+                  "        pm.expect(b).to.have.property('league');",
+                  "        pm.expect(b).to.have.property('evolutions');",
+                  "        pm.expect(b).to.have.property('spriteUrl');",
+                  "        pm.environment.set('raidBossId', b.id);",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/raids", "host": ["{{baseUrl}}"], "path": ["raids"] } },
+          "description": "Raid boss cards: pokemonName, types, starRating (1/3/5), weaknesses, DPS, TDO, ivSpread (15/15/15), league, evolutions/forms, spriteUrl, tier, cp."
+        },
+        {
+          "name": "Get Raid Boss Detail (Full)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "pm.test('Detail has all sections', function () {",
+                  "    const json = pm.response.json();",
+                  "    const d = json.data || json;",
+                  "    // Boss Moves",
+                  "    pm.expect(d).to.have.property('quickMoves');",
+                  "    pm.expect(d).to.have.property('chargedMoves');",
+                  "    // 100% IV Catch CP",
+                  "    pm.expect(d).to.have.property('catchCp');",
+                  "    pm.expect(d).to.have.property('weatherBoostedCatchCp');",
+                  "    // Rankings",
+                  "    pm.expect(d).to.have.property('currentRankings');",
+                  "    pm.expect(d.currentRankings).to.have.property('overallRank');",
+                  "    pm.expect(d.currentRankings).to.have.property('typeRank');",
+                  "    // Forms & Weaknesses",
+                  "    pm.expect(d).to.have.property('potentialForms');",
+                  "    pm.expect(d).to.have.property('allWeaknesses');",
+                  "    // Ideal Counters",
+                  "    pm.expect(d).to.have.property('idealCounters');",
+                  "    if (d.idealCounters.length > 0) {",
+                  "        pm.expect(d.idealCounters[0]).to.have.property('quickMove');",
+                  "        pm.expect(d.idealCounters[0]).to.have.property('chargedMove');",
+                  "        pm.expect(d.idealCounters[0]).to.have.property('survivePercent');",
+                  "        pm.expect(d.idealCounters[0]).to.have.property('effectivenessPercent');",
+                  "    }",
+                  "    // Suggested Team",
+                  "    pm.expect(d).to.have.property('suggestedTeam');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/raids/{{raidBossId}}", "host": ["{{baseUrl}}"], "path": ["raids", "{{raidBossId}}"] } },
+          "description": "Full raid boss detail page:\n\n- **Boss Moves**: quickMoves + chargedMoves (with * for legacy/elite moves)\n- **100% IV Catch CP**: catchCp (regular) + weatherBoostedCatchCp\n- **Current Rankings**: overallRank + typeRank (e.g. Dragon Type Rank #1)\n- **League**: Master/Ultra/Great based on tier\n- **Potential Forms**: Mega, Primal, Shadow, Gigantamax variants\n- **All Weaknesses**: computed from type chart\n- **5 Ideal Counters**: each with quickMove, chargedMove, DPS, survivePercent, effectivenessPercent, spriteUrl\n- **Suggested Team**: top 3 counters (name + sprite) for optimal balance of DPS and survivability"
+        },
+        {
+          "name": "Get My Raid Teams",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/raids/queues", "host": ["{{baseUrl}}"], "path": ["raids", "queues"] } },
+          "description": "Get user's saved counter teams."
+        },
+        {
+          "name": "Save Counter Team (Build Your Team)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["if (pm.response.code === 200 || pm.response.code === 201) { const d = (pm.response.json().data || pm.response.json()); if(d.id) pm.environment.set('raidQueueId', d.id); }"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"pokemonIds\": [248, 94, 131]\n}" },
+            "url": { "raw": "{{baseUrl}}/raids/{{raidBossId}}/queue", "host": ["{{baseUrl}}"], "path": ["raids", "{{raidBossId}}", "queue"] },
+            "description": "Save a counter team for a boss (Build Your Team screen). 1-6 Pokémon IDs. Team is saved into ranking history."
+          }
+        },
+        {
+          "name": "Delete Saved Team",
+          "request": { "method": "DELETE", "header": [], "url": { "raw": "{{baseUrl}}/raids/queues/{{raidQueueId}}", "host": ["{{baseUrl}}"], "path": ["raids", "queues", "{{raidQueueId}}"] } },
+          "description": "Remove a saved counter team."
+        }
+      ]
+    },
+    {
+      "name": "Name Generator",
+      "description": "PvP name generator with template tokens and user presets. Tokens: {Species}, {IV}, {IVSpread}, {League} (GL/UL/ML), {Role} (ATK/TNK/SUP), {Moveset} (FS/BB), {Rank}, {CP}. Auto-resolves Pokémon name from DB. Max 12 chars (Pokémon GO limit).",
+      "item": [
+        {
+          "name": "Generate Name (PvP Standard)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200 or 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Has generatedName and pokemonName', function () {",
+                  "    const json = pm.response.json();",
+                  "    const d = json.data || json;",
+                  "    pm.expect(d).to.have.property('generatedName');",
+                  "    pm.expect(d).to.have.property('pokemonName');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"template\": \"{Species}_{IV}_{League}\",\n  \"pokemonId\": 6,\n  \"ivPercent\": 98,\n  \"league\": \"great\"\n}" },
+            "url": { "raw": "{{baseUrl}}/name-generator/generate", "host": ["{{baseUrl}}"], "path": ["name-generator", "generate"] },
+            "description": "PvP Standard preset: 'Charizard_98_GL' → truncated to 12 chars."
+          }
+        },
+        {
+          "name": "Generate Name (IV Spread)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"template\": \"{Species}-{IVSpread}\",\n  \"pokemonId\": 6,\n  \"ivSpread\": \"15/14/15\"\n}" },
+            "url": { "raw": "{{baseUrl}}/name-generator/generate", "host": ["{{baseUrl}}"], "path": ["name-generator", "generate"] },
+            "description": "IV Spread preset: 'Charizard-15/14/15' → truncated."
+          }
+        },
+        {
+          "name": "Generate Name (Role Based)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"template\": \"{Role} {Species}_{CP}\",\n  \"pokemonId\": 6,\n  \"role\": \"attacker\",\n  \"cp\": 1500\n}" },
+            "url": { "raw": "{{baseUrl}}/name-generator/generate", "host": ["{{baseUrl}}"], "path": ["name-generator", "generate"] },
+            "description": "Role Based preset: 'ATK Charizard_1500' → truncated."
+          }
+        },
+        {
+          "name": "Generate Name (Moveset)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"template\": \"{Species} {Moveset} {IV}\",\n  \"pokemonId\": 6,\n  \"fastMove\": \"Fire Spin\",\n  \"chargeMove\": \"Blast Burn\",\n  \"ivPercent\": 98\n}" },
+            "url": { "raw": "{{baseUrl}}/name-generator/generate", "host": ["{{baseUrl}}"], "path": ["name-generator", "generate"] },
+            "description": "Moveset preset: 'Charizard FS/BB 98' → truncated."
+          }
+        },
+        {
+          "name": "Generate Name (Rank Focus)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"template\": \"#{Rank} {Species} {League}\",\n  \"pokemonId\": 6,\n  \"rank\": 1,\n  \"league\": \"great\"\n}" },
+            "url": { "raw": "{{baseUrl}}/name-generator/generate", "host": ["{{baseUrl}}"], "path": ["name-generator", "generate"] },
+            "description": "Rank Focus preset: '#1 Charizard GL' → truncated."
+          }
+        },
+        {
+          "name": "Get My Presets",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/name-generator/presets", "host": ["{{baseUrl}}"], "path": ["name-generator", "presets"] } },
+          "description": "Get all user's saved name presets."
+        },
+        {
+          "name": "Save Preset",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["if (pm.response.code === 200 || pm.response.code === 201) { const d = (pm.response.json().data || pm.response.json()); if(d.id) pm.environment.set('presetId', d.id); }"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"PvP Standard\",\n  \"template\": \"{Species}_{IV}_{League}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/name-generator/presets", "host": ["{{baseUrl}}"], "path": ["name-generator", "presets"] },
+            "description": "Save a named template for reuse."
+          }
+        },
+        {
+          "name": "Delete Preset",
+          "request": { "method": "DELETE", "header": [], "url": { "raw": "{{baseUrl}}/name-generator/presets/{{presetId}}", "host": ["{{baseUrl}}"], "path": ["name-generator", "presets", "{{presetId}}"] } }
+        }
+      ]
+    },
+    {
+      "name": "Ranking History",
+      "description": "Full Ranking History module matching the app UI screens 32-35.\n\n**Battle History Stats**: teamsCount, pokemonCount, avgTeamSize.\n\n**Pokémon Tab (Screen 32)**: Paginated list with tier badge (S/A/B/C/D), types, IV Spread, league, DPS, TDO, Ranking. Filter by tier (S/A/B/C/D) and league (great/ultra/master).\n\n**Detail (Screen 33)**: IV Breakdown (ATK/DEF/HP out of 15), Rank Trend Over Time (line chart data points), Notes & Alerts (meta insights).\n\n**Teams Tab (Screen 34)**: Saved teams with boss name, creation date, member count, and member sprites/types.\n\n**Team Detail (Screen 35)**: Uses Raid Boss Detail endpoint for boss info + team members from saved queues.",
+      "item": [
+        {
+          "name": "Get Battle History Stats",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "pm.test('Stats have all summary fields', function () {",
+                  "    const d = (pm.response.json().data || pm.response.json());",
+                  "    pm.expect(d).to.have.property('teamsCount');",
+                  "    pm.expect(d).to.have.property('pokemonCount');",
+                  "    pm.expect(d).to.have.property('avgTeamSize');",
+                  "    pm.expect(d.teamsCount).to.be.a('number');",
+                  "    pm.expect(d.pokemonCount).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/history/stats", "host": ["{{baseUrl}}"], "path": ["history", "stats"] } },
+          "description": "Battle History summary — Teams count, Pokémon count, Avg Team Size. Shown at the top of the Ranking History screen."
+        },
+        {
+          "name": "Get Ranking History (All)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "pm.test('Entries have enriched card fields', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || [];",
+                  "    if (data.length > 0) {",
+                  "        const e = data[0];",
+                  "        pm.expect(e).to.have.property('pokemonName');",
+                  "        pm.expect(e).to.have.property('pokemonTypes');",
+                  "        pm.expect(e).to.have.property('spriteUrl');",
+                  "        pm.expect(e).to.have.property('tier');",
+                  "        pm.expect(e).to.have.property('ivSpread');",
+                  "        pm.expect(e).to.have.property('league');",
+                  "        pm.expect(e).to.have.property('dps');",
+                  "        pm.expect(e).to.have.property('tdo');",
+                  "        pm.expect(e).to.have.property('metaRank');",
+                  "        pm.environment.set('historyEntryId', e.id);",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/history?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["history"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "tier", "value": "S", "disabled": true },
+                { "key": "league", "value": "great", "disabled": true }
+              ]
+            }
+          },
+          "description": "Pokémon Tab — paginated ranking history cards. Each card: rank #, name, tier badge (S/A/B/C/D), types, IV Spread (15/13/14), league, DPS, TDO, Ranking. Filter by tier (S/A/B/C/D) and league (great/ultra/master). Enable disabled query params to filter."
+        },
+        {
+          "name": "Get Ranking History (Tier S only)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/history?tier=S&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["history"],
+              "query": [
+                { "key": "tier", "value": "S" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          },
+          "description": "Filter history to Tier S Pokémon only — best of the best."
+        },
+        {
+          "name": "Get Ranking History (Master League)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/history?league=master&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["history"],
+              "query": [
+                { "key": "league", "value": "master" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          },
+          "description": "Filter history to Master League Pokémon."
+        },
+        {
+          "name": "Get History Entry Detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "pm.test('Detail has IV breakdown, rank trend, notes', function () {",
+                  "    const d = (pm.response.json().data || pm.response.json());",
+                  "    pm.expect(d).to.have.property('ivBreakdown');",
+                  "    pm.expect(d.ivBreakdown).to.have.property('attack');",
+                  "    pm.expect(d.ivBreakdown).to.have.property('defense');",
+                  "    pm.expect(d.ivBreakdown).to.have.property('hp');",
+                  "    pm.expect(d).to.have.property('rankTrend');",
+                  "    pm.expect(d.rankTrend).to.be.an('array');",
+                  "    pm.expect(d).to.have.property('notes');",
+                  "    pm.expect(d.notes).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/history/{{historyEntryId}}/detail", "host": ["{{baseUrl}}"], "path": ["history", "{{historyEntryId}}", "detail"] } },
+          "description": "Screen 33 — Single entry detail view:\n\n- **IV Breakdown**: Attack (X/15), Defense (X/15), HP (X/15)\n- **Rank Trend Over Time**: Array of {date, rank} data points for the line chart\n- **Notes & Alerts**: Auto-generated insights like 'Strong in current meta', 'Move set Rebalance Impact: +7 ranks'"
+        },
+        {
+          "name": "Get Pokémon Rank Trend",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "pm.test('Trend returns date + rank points', function () {",
+                  "    const d = (pm.response.json().data || pm.response.json());",
+                  "    pm.expect(d).to.be.an('array');",
+                  "    if (d.length > 0) {",
+                  "        pm.expect(d[0]).to.have.property('date');",
+                  "        pm.expect(d[0]).to.have.property('rank');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/history/150/trend", "host": ["{{baseUrl}}"], "path": ["history", "150", "trend"] } },
+          "description": "Get rank trend over time for one Pokémon (line chart data). Each point has date + rank. Lower rank = better performance."
+        },
+        {
+          "name": "Get Saved Teams",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "pm.test('Teams have boss name, members, date', function () {",
+                  "    const d = (pm.response.json().data || pm.response.json());",
+                  "    pm.expect(d).to.be.an('array');",
+                  "    if (d.length > 0) {",
+                  "        const t = d[0];",
+                  "        pm.expect(t).to.have.property('bossName');",
+                  "        pm.expect(t).to.have.property('pokemonCount');",
+                  "        pm.expect(t).to.have.property('members');",
+                  "        pm.expect(t.members).to.be.an('array');",
+                  "        pm.expect(t).to.have.property('createdAt');",
+                  "        if (t.members.length > 0) {",
+                  "            pm.expect(t.members[0]).to.have.property('name');",
+                  "            pm.expect(t.members[0]).to.have.property('spriteUrl');",
+                  "        }",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/history/teams", "host": ["{{baseUrl}}"], "path": ["history", "teams"] } },
+          "description": "Teams Tab (Screen 34) — List saved counter teams. Each team shows:\n- Boss name (e.g. 'Team Created for Gengar')\n- Creation date (e.g. 'Fri, Nov 14, 10:30 AM')\n- Pokémon count\n- Members with name, types, and spriteUrl for avatar display"
+        },
+        {
+          "name": "Export History (JSON)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/history/export", "host": ["{{baseUrl}}"], "path": ["history", "export"] } },
+          "description": "Export all history entries as JSON array — useful for data analysis or backup."
+        },
+        {
+          "name": "Delete History Entry",
+          "request": { "method": "DELETE", "header": [], "url": { "raw": "{{baseUrl}}/history/{{historyEntryId}}", "host": ["{{baseUrl}}"], "path": ["history", "{{historyEntryId}}"] } },
+          "description": "Soft-delete one history entry. Entry is marked with deletedAt timestamp but not physically removed."
+        }
+      ]
+    },
+    {
+      "name": "Recommendations (Chase)",
+      "description": "Investment recommendations — requires auth. Returns pokemonName, spriteUrl, action (EVOLVE/POWER_UP), reasoning, estimatedCp, league, and metaRank from DB. High IV (≥80%) Pokémon at low level → POWER_UP; all high IV → EVOLVE.",
+      "item": [
+        {
+          "name": "Generate Recommendations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200 or 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Recommendations have enriched fields', function () {",
+                  "    const json = pm.response.json();",
+                  "    const data = json.data || json;",
+                  "    if (data.length > 0) {",
+                  "        pm.expect(data[0]).to.have.property('pokemonName');",
+                  "        pm.expect(data[0]).to.have.property('spriteUrl');",
+                  "        pm.expect(data[0]).to.have.property('action');",
+                  "        pm.expect(data[0]).to.have.property('reasoning');",
+                  "        pm.expect(data[0]).to.have.property('estimatedCp');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"stardust\": 75000,\n  \"ownedPokemon\": [\n    { \"pokemonId\": 6, \"ivAtk\": 15, \"ivDef\": 14, \"ivSta\": 15, \"currentLevel\": 20, \"combatPower\": 1500, \"candyCount\": 124 },\n    { \"pokemonId\": 150, \"ivAtk\": 15, \"ivDef\": 15, \"ivSta\": 15, \"currentLevel\": 35, \"combatPower\": 3800, \"candyCount\": 60 }\n  ]\n}" },
+            "url": { "raw": "{{baseUrl}}/recommendations", "host": ["{{baseUrl}}"], "path": ["recommendations"] },
+            "description": "Send owned Pokémon with IVs, level, current CP, and candy count. Returns EVOLVE/POWER_UP recommendations with pokemonName, spriteUrl, estimatedCp, metaRank, reasoning, ivPercent, cost (stardust + candy), and suggested league."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Events (Public)",
+      "description": "Public event listing",
+      "item": [
+        {
+          "name": "List Events",
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/events?status=all&page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["events"], "query": [{ "key": "status", "value": "all" }, { "key": "page", "value": "1" }, { "key": "limit", "value": "20" }] } }
+        },
+        {
+          "name": "Get Event Detail",
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/events/{{eventId}}", "host": ["{{baseUrl}}"], "path": ["events", "{{eventId}}"] } }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Events",
+      "description": "Admin-only event management (requires admin role)",
+      "item": [
+        {
+          "name": "List All Events (Admin)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/admin/events?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["admin", "events"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }] } }
+        },
+        {
+          "name": "Create Event",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["if (pm.response.code === 200 || pm.response.code === 201) { const d = (pm.response.json().data || pm.response.json()); if(d.id) pm.environment.set('eventId', d.id); }"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"internalId\": \"community-day-apr-2026\",\n  \"name\": \"Community Day — April 2026\",\n  \"description\": \"Featured Pokémon with exclusive moves\",\n  \"bonuses\": [{ \"label\": \"3x Catch XP\", \"icon\": \"xp\" }],\n  \"featuredPokemonIds\": [1, 4, 7],\n  \"startDate\": \"2026-04-15T11:00:00.000Z\",\n  \"endDate\": \"2026-04-15T17:00:00.000Z\",\n  \"timezone\": \"America/New_York\",\n  \"visibility\": \"scheduled\",\n  \"priority\": 1\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/events", "host": ["{{baseUrl}}"], "path": ["admin", "events"] }
+          }
+        },
+        {
+          "name": "Update Event",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Community Day — Updated\",\n  \"priority\": 2\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/events/{{eventId}}", "host": ["{{baseUrl}}"], "path": ["admin", "events", "{{eventId}}"] }
+          }
+        },
+        {
+          "name": "Publish Event",
+          "request": { "method": "PATCH", "header": [], "url": { "raw": "{{baseUrl}}/admin/events/{{eventId}}/publish", "host": ["{{baseUrl}}"], "path": ["admin", "events", "{{eventId}}", "publish"] } }
+        },
+        {
+          "name": "Schedule Event",
+          "request": { "method": "PATCH", "header": [], "url": { "raw": "{{baseUrl}}/admin/events/{{eventId}}/schedule", "host": ["{{baseUrl}}"], "path": ["admin", "events", "{{eventId}}", "schedule"] } }
+        },
+        {
+          "name": "Delete Event",
+          "request": { "method": "DELETE", "header": [], "url": { "raw": "{{baseUrl}}/admin/events/{{eventId}}", "host": ["{{baseUrl}}"], "path": ["admin", "events", "{{eventId}}"] } }
+        },
+        {
+          "name": "Get Event Audit Log",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/admin/events/{{eventId}}/audit", "host": ["{{baseUrl}}"], "path": ["admin", "events", "{{eventId}}", "audit"] } }
+        }
+      ]
+    },
+    {
+      "name": "Settings",
+      "description": "User settings: notifications, change password, delete account. Matches Settings screen (Screen 40-48).",
+      "item": [
+        {
+          "name": "Get Notification Settings",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/settings/notifications", "host": ["{{baseUrl}}"], "path": ["settings", "notifications"] } },
+          "description": "Get current notification toggle state."
+        },
+        {
+          "name": "Update Notification Settings",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"enabled\": false\n}" },
+            "url": { "raw": "{{baseUrl}}/settings/notifications", "host": ["{{baseUrl}}"], "path": ["settings", "notifications"] }
+          },
+          "description": "Toggle notifications on/off."
+        },
+        {
+          "name": "Change Password",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Status code is 200 or 201', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"Test@12345\",\n  \"newPassword\": \"NewPass@456\",\n  \"confirmPassword\": \"NewPass@456\"\n}" },
+            "url": { "raw": "{{baseUrl}}/settings/change-password", "host": ["{{baseUrl}}"], "path": ["settings", "change-password"] }
+          },
+          "description": "Change password while logged in. Requires current password. Social-only users will get an error."
+        },
+        {
+          "name": "Delete Account",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/users/me/account", "host": ["{{baseUrl}}"], "path": ["users", "me", "account"] }
+          },
+          "description": "Soft-delete account. Deactivates the account and revokes all sessions."
+        }
+      ]
+    },
+    {
+      "name": "Content (Public)",
+      "description": "App content pages — Terms & Conditions, Privacy Policy, Help & Feedback instructions. Public read, admin write.",
+      "item": [
+        {
+          "name": "Get Terms & Conditions",
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/content/terms-and-conditions", "host": ["{{baseUrl}}"], "path": ["content", "terms-and-conditions"] } },
+          "description": "Get published Terms & Conditions content."
+        },
+        {
+          "name": "Get Privacy Policy",
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/content/privacy-policy", "host": ["{{baseUrl}}"], "path": ["content", "privacy-policy"] } },
+          "description": "Get published Privacy Policy content."
+        },
+        {
+          "name": "Get Help & Instructions",
+          "request": { "auth": { "type": "noauth" }, "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/content/help-instructions", "host": ["{{baseUrl}}"], "path": ["content", "help-instructions"] } },
+          "description": "Get Help & Feedback page content (instructions, social links)."
+        }
+      ]
+    },
+    {
+      "name": "Admin — Content",
+      "description": "Admin CRUD for app content pages",
+      "item": [
+        {
+          "name": "List All Content (Admin)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/admin/content", "host": ["{{baseUrl}}"], "path": ["admin", "content"] } }
+        },
+        {
+          "name": "Create Content Page",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"slug\": \"terms-and-conditions\",\n  \"title\": \"Terms & Conditions\",\n  \"body\": \"<p>Full terms and conditions content here...</p>\",\n  \"socialLinks\": [],\n  \"isPublished\": true\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/content", "host": ["{{baseUrl}}"], "path": ["admin", "content"] }
+          }
+        },
+        {
+          "name": "Update Content Page",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"body\": \"<p>Updated terms content...</p>\"\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/content/terms-and-conditions", "host": ["{{baseUrl}}"], "path": ["admin", "content", "terms-and-conditions"] }
+          }
+        },
+        {
+          "name": "Delete Content Page",
+          "request": { "method": "DELETE", "header": [], "url": { "raw": "{{baseUrl}}/admin/content/terms-and-conditions", "host": ["{{baseUrl}}"], "path": ["admin", "content", "terms-and-conditions"] } }
+        }
+      ]
+    },
+    {
+      "name": "Support Tickets",
+      "description": "Submit support tickets with optional media attachments. Matches Ticket screens (Screen 46-47).",
+      "item": [
+        {
+          "name": "Submit Ticket (with media)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["if (pm.response.code === 200 || pm.response.code === 201) { const d = (pm.response.json().data || pm.response.json()); if(d.id) pm.environment.set('ticketId', d.id); }"] } }],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "title", "value": "App crashes on Pokédex", "type": "text" },
+                { "key": "description", "value": "When I open Pokédex and scroll down quickly, the app freezes and then crashes.", "type": "text" },
+                { "key": "media", "type": "file", "src": "", "description": "Optional screenshot or video (max 5MB)" }
+              ]
+            },
+            "url": { "raw": "{{baseUrl}}/tickets", "host": ["{{baseUrl}}"], "path": ["tickets"] }
+          },
+          "description": "Submit a support ticket with optional media attachment. Send as multipart/form-data."
+        },
+        {
+          "name": "List My Tickets",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/tickets", "host": ["{{baseUrl}}"], "path": ["tickets"] } },
+          "description": "List all tickets submitted by the current user."
+        },
+        {
+          "name": "Get Ticket Detail",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/tickets/{{ticketId}}", "host": ["{{baseUrl}}"], "path": ["tickets", "{{ticketId}}"] } }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Tickets",
+      "description": "Admin ticket management: list all, reply, change status",
+      "item": [
+        {
+          "name": "List All Tickets (Admin)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/admin/tickets?status=open", "host": ["{{baseUrl}}"], "path": ["admin", "tickets"], "query": [{ "key": "status", "value": "open" }] } }
+        },
+        {
+          "name": "Get Ticket Detail (Admin)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/admin/tickets/{{ticketId}}", "host": ["{{baseUrl}}"], "path": ["admin", "tickets", "{{ticketId}}"] } }
+        },
+        {
+          "name": "Reply to Ticket (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"message\": \"We are looking into this issue. Thank you for reporting.\"\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/tickets/{{ticketId}}/reply", "host": ["{{baseUrl}}"], "path": ["admin", "tickets", "{{ticketId}}", "reply"] }
+          }
+        },
+        {
+          "name": "Update Ticket Status (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"resolved\"\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/tickets/{{ticketId}}/status", "host": ["{{baseUrl}}"], "path": ["admin", "tickets", "{{ticketId}}", "status"] }
+          }
+        }
+      ]
+    }
+  ]
+}
