@@ -20,11 +20,11 @@ jobs:
 
       - name: Install dependencies
         run: npm install
-        working-directory: pokerank-api/pokerank-api
+        working-directory: pokerank-api
 
       - name: Build project
         run: npm run build
-        working-directory: pokerank-api/pokerank-api
+        working-directory: pokerank-api
 
       - name: Start/Restart with PM2
         run: |
@@ -32,4 +32,4 @@ jobs:
           pm2 stop all || true
           pm2 start "npm run start:prod" --name pokerank-api
           pm2 save
-        working-directory: pokerank-api/pokerank-api
+        working-directory: pokerank-api
