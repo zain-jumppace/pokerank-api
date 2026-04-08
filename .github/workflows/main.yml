@@ -1,4 +1,4 @@
-name: Pokerank-api Deployment to CPanel
+name: Pokerank-api Restart Only
 
 on:
   push:
@@ -10,10 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-
-      - name: Deploy to CPanel via SSH
+      - name: Restart app via SSH
         uses: appleboy/ssh-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_IP }}
@@ -21,10 +18,12 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           script: |
-            # Go to project folder on server
-            cd ~/devops/PokeRank-backend-development/pokerank-api/
+            
 
-             # PM2: Delete old process if exists, start new
+            # Delete old PM2 process
             pm2 delete pokerank-api || true
+
+            # Start new process
             pm2 start "npm run start:prod" --name pokerank-api
+
             pm2 save
