@@ -1,9 +1,9 @@
-name: Pokerank-api Deployment
+name: Pokerank-api Deployment to CPanel
 
 on:
   push:
     branches:
-      - main   
+      - main
 
 jobs:
   deploy:
@@ -13,23 +13,18 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - name: Deploy to CPanel via SSH
+        uses: appleboy/ssh-action@v0.1.7
         with:
-          node-version: '20'   
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            # Go to project folder on server
+            cd ~/devops/PokeRank-backend-development/pokerank-api/
 
-      - name: Install dependencies
-        run: npm install
-        working-directory: pokerank-api
-
-      - name: Build project
-        run: npm run build
-        working-directory: pokerank-api
-
-      - name: Start/Restart with PM2
-        run: |
-          npm install pm2 -g
-          pm2 stop all || true
-          pm2 start "npm run start:prod" --name pokerank-api
-          pm2 save
-        working-directory: pokerank-api
+             # PM2: Delete old process if exists, start new
+            pm2 delete pokerank-api || true
+            pm2 start "npm run start:prod" --name pokerank-api
+            pm2 save
