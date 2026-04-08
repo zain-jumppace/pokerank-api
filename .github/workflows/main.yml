@@ -18,7 +18,7 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           script: |
-            
+            cd /home/stagingserver/devops/PokeRank-backend-development/pokerank-api
 
             # Delete old PM2 process
             pm2 delete pokerank-api || true
